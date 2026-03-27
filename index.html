@@ -618,118 +618,199 @@ function renderSlide1() {
 }
 
 // ============================================================
-// SLIDE 1b: Many people auto-animation
+// SLIDE 1b: Many people auto-animation (smooth)
 // ============================================================
 const svg1b = document.getElementById('svg1b');
 const s1bStatus = document.getElementById('s1bStatus');
 let s1bTimers = [];
-let s1bSettledPaths = [];
 
 function clearS1bTimers() {
   s1bTimers.forEach(t => clearTimeout(t));
   s1bTimers = [];
 }
 
-function renderS1bFrame(batch, step, settled) {
-  const s = getScales(svg1b);
-  const pos = drawBase(svg1b, s);
-
-  // Draw settled theta lines from completed batches
-  settled.forEach(p => {
-    const tx = s.x(p.theta);
-    svg1b.appendChild(svgEl('line', {
-      x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
-      stroke: '#e06c8a', 'stroke-width': 1.5, opacity: 0.25, 'stroke-linecap': 'round'
-    }));
-    svg1b.appendChild(svgEl('circle', {
-      cx: tx, cy: MARGIN.top - 5, r: 2.5, fill: '#e06c8a', opacity: 0.3
-    }));
-  });
-
-  // Draw active batch members
-  batch.forEach(path => {
-    const adminItems = path.items.map(id => items.find(it => it.id === id));
-    const responses = path.responses;
-    const answered = Math.min(step, 4);
-
-    // Compute theta at this step
-    let theta = 0;
-    if (answered > 0) {
-      theta = eapTheta(responses.slice(0, answered), adminItems.slice(0, answered));
+// Smooth theta-line sliding via requestAnimationFrame
+function slideLine(lineEl, dotEl, fromX, toX, duration) {
+  if (lineEl._animFrame) cancelAnimationFrame(lineEl._animFrame);
+  const start = performance.now();
+  function frame() {
+    const t = Math.min((performance.now() - start) / duration, 1);
+    const e = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const x = fromX + (toX - fromX) * e;
+    lineEl.setAttribute('x1', x);
+    lineEl.setAttribute('x2', x);
+    dotEl.setAttribute('cx', x);
+    if (t < 1) {
+      lineEl._animFrame = requestAnimationFrame(frame);
+    } else {
+      lineEl._animFrame = null;
     }
-
-    // Theta line
-    const tx = s.x(theta);
-    svg1b.appendChild(svgEl('line', {
-      x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
-      stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.65, 'stroke-linecap': 'round'
-    }));
-    svg1b.appendChild(svgEl('circle', {
-      cx: tx, cy: MARGIN.top - 5, r: 3.5, fill: '#e06c8a', opacity: 0.85
-    }));
-
-    // Highlight answered items
-    for (let i = 0; i < answered; i++) {
-      const tp = pos.find(p => p.id === adminItems[i].id);
-      if (!tp) continue;
-      const isYes = responses[i] === 1;
-      svg1b.appendChild(svgEl('rect', {
-        x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
-        fill: isYes ? 'rgba(63, 185, 160, 0.15)' : 'rgba(224, 108, 138, 0.15)',
-        rx: 3
-      }));
-    }
-  });
-
-  // Update status
-  const done = settled.length;
-  const active = batch.length;
-  if (active > 0) {
-    s1bStatus.innerHTML = `<strong>${done + active}</strong> of 16 people`;
-  } else {
-    s1bStatus.innerHTML = `<strong>${done}</strong> people measured`;
   }
+  lineEl._animFrame = requestAnimationFrame(frame);
 }
 
 function startS1bAnimation() {
   clearS1bTimers();
-  s1bSettledPaths = [];
 
-  // All 16 four-item paths (including the demo path the user already saw)
+  // Draw base once — all dynamic elements go into layers on top
+  const s = getScales(svg1b);
+  const pos = drawBase(svg1b, s);
+
+  // Layer groups (bottom → top)
+  const highlightLayer = svgEl('g', {});
+  const askLayer = svgEl('g', {});
+  const thetaLayer = svgEl('g', {});
+  svg1b.appendChild(highlightLayer);
+  svg1b.appendChild(askLayer);
+  svg1b.appendChild(thetaLayer);
+
   const allPaths = catResults[4];
-
-  // Build batches of 3
   const batches = [];
   for (let i = 0; i < allPaths.length; i += 3) {
     batches.push(allPaths.slice(i, Math.min(i + 3, allPaths.length)));
   }
 
   let batchIdx = 0;
+  let settledCount = 0;
 
   function runBatch() {
     if (batchIdx >= batches.length) {
-      // Final settled state
-      renderS1bFrame([], 0, s1bSettledPaths);
+      s1bStatus.innerHTML = `<strong>${allPaths.length}</strong> people measured`;
       return;
     }
 
     const batch = batches[batchIdx];
-    let step = 0;
+
+    // Create persistent elements for each person in this batch
+    const people = batch.map(path => {
+      const adminItems = path.items.map(id => items.find(it => it.id === id));
+      const adminPos = adminItems.map(item => pos.find(p => p.id === item.id));
+      const responses = path.responses;
+      const startX = s.x(0);
+
+      // Theta vertical line + top dot
+      const line = svgEl('line', {
+        x1: startX, x2: startX, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+        stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.65, 'stroke-linecap': 'round'
+      });
+      const dot = svgEl('circle', {
+        cx: startX, cy: MARGIN.top - 5, r: 3.5, fill: '#e06c8a', opacity: 0.85
+      });
+      thetaLayer.appendChild(line);
+      thetaLayer.appendChild(dot);
+
+      // Ask highlight (white rect — repositioned each ask phase)
+      const askRect = svgEl('rect', {
+        x: MARGIN.left - 4, y: 0, width: s.pw + 8, height: 16, rx: 3,
+        fill: 'rgba(240, 243, 246, 0.08)'
+      });
+      askRect.style.opacity = '0';
+      askRect.style.transition = 'opacity 0.15s ease';
+      askLayer.appendChild(askRect);
+
+      // Ask bright dot + pulsing ring
+      const askDot = svgEl('circle', {
+        cx: 0, cy: 0, r: 5.5, fill: '#f0f3f6'
+      });
+      askDot.style.opacity = '0';
+      askDot.style.transition = 'opacity 0.15s ease';
+      askLayer.appendChild(askDot);
+
+      const askRing = svgEl('circle', {
+        cx: 0, cy: 0, r: 4, fill: 'none', stroke: '#f0f3f6', 'stroke-width': 2
+      });
+      askRing.style.opacity = '0';
+      askLayer.appendChild(askRing);
+
+      // Answer highlight rects (one per administered item, start hidden)
+      const ansRects = adminItems.map((item, i) => {
+        const tp = adminPos[i];
+        const rect = svgEl('rect', {
+          x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
+          rx: 3, fill: 'transparent'
+        });
+        rect.style.opacity = '0';
+        rect.style.transition = 'opacity 0.2s ease';
+        highlightLayer.appendChild(rect);
+        return rect;
+      });
+
+      return {
+        path, adminItems, adminPos, responses,
+        line, dot, askRect, askDot, askRing, ansRects,
+        currentX: startX
+      };
+    });
+
+    // Animate: 8 sub-steps (ask Q1, ans Q1, ask Q2, ans Q2, …)
+    let subStep = 0;
 
     function tick() {
-      renderS1bFrame(batch, step, s1bSettledPaths);
+      const qIdx = Math.floor(subStep / 2);
+      const isAsk = subStep % 2 === 0;
 
-      if (step < 4) {
-        step++;
-        s1bTimers.push(setTimeout(tick, 420));
+      people.forEach(pe => {
+        if (isAsk && qIdx < 4) {
+          // ── ASK phase: white highlight + pulsing ring ──
+          const tp = pe.adminPos[qIdx];
+          pe.askRect.setAttribute('y', tp.y - 8);
+          pe.askRect.style.opacity = '1';
+
+          pe.askDot.setAttribute('cx', tp.x);
+          pe.askDot.setAttribute('cy', tp.y);
+          pe.askDot.style.opacity = '0.95';
+
+          pe.askRing.setAttribute('cx', tp.x);
+          pe.askRing.setAttribute('cy', tp.y);
+          pe.askRing.style.opacity = '1';
+          pe.askRing.style.animation = 'ringPulse 1.2s ease-out 0s infinite';
+
+        } else if (!isAsk) {
+          // ── ANSWER phase: hide ask, show result, slide theta ──
+          pe.askRect.style.opacity = '0';
+          pe.askDot.style.opacity = '0';
+          pe.askRing.style.opacity = '0';
+          pe.askRing.style.animation = 'none';
+
+          // Colour the answer row
+          const isYes = pe.responses[qIdx] === 1;
+          pe.ansRects[qIdx].setAttribute('fill',
+            isYes ? 'rgba(63, 185, 160, 0.18)' : 'rgba(224, 108, 138, 0.18)');
+          pe.ansRects[qIdx].style.opacity = '1';
+
+          // Slide theta line smoothly
+          const answered = qIdx + 1;
+          const theta = eapTheta(
+            pe.responses.slice(0, answered),
+            pe.adminItems.slice(0, answered)
+          );
+          const newX = s.x(theta);
+          slideLine(pe.line, pe.dot, pe.currentX, newX, 320);
+          pe.currentX = newX;
+        }
+      });
+
+      s1bStatus.innerHTML = `<strong>${settledCount + batch.length}</strong> of ${allPaths.length}`;
+
+      subStep++;
+      if (subStep < 8) {
+        s1bTimers.push(setTimeout(tick, isAsk ? 350 : 420));
       } else {
-        // Settle: pause, then add to settled and start next batch
+        // ── SETTLE: fade highlights, dim theta lines ──
         s1bTimers.push(setTimeout(() => {
-          batch.forEach(p => s1bSettledPaths.push(p));
+          people.forEach(pe => {
+            // Fade out answer highlights
+            pe.ansRects.forEach(r => { r.style.opacity = '0'; });
+            // Dim theta line + dot to "settled" look
+            pe.line.setAttribute('opacity', '0.25');
+            pe.line.setAttribute('stroke-width', '1.5');
+            pe.dot.setAttribute('opacity', '0.3');
+            pe.dot.setAttribute('r', '2.5');
+          });
+
+          settledCount += batch.length;
           batchIdx++;
-          // Brief settled view before next batch
-          renderS1bFrame([], 0, s1bSettledPaths);
-          s1bTimers.push(setTimeout(runBatch, 350));
+          s1bTimers.push(setTimeout(runBatch, 400));
         }, 500));
       }
     }
@@ -737,7 +818,7 @@ function startS1bAnimation() {
     tick();
   }
 
-  // Initial delay before starting
+  // Small initial delay
   s1bTimers.push(setTimeout(runBatch, 600));
 }
 
