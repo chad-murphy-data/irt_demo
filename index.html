@@ -666,8 +666,8 @@ function startS1bAnimation() {
 
   const allPaths = catResults[4];
   const batches = [];
-  for (let i = 0; i < allPaths.length; i += 3) {
-    batches.push(allPaths.slice(i, Math.min(i + 3, allPaths.length)));
+  for (let i = 0; i < allPaths.length; i++) {
+    batches.push([allPaths[i]]);
   }
 
   let batchIdx = 0;
@@ -801,7 +801,7 @@ function startS1bAnimation() {
             pe.adminItems.slice(0, answered)
           );
           const newX = s.x(theta);
-          slideLine(pe.line, pe.dot, pe.currentX, newX, 600);
+          slideLine(pe.line, pe.dot, pe.currentX, newX, 900);
           pe.currentX = newX;
         }
       });
@@ -810,8 +810,8 @@ function startS1bAnimation() {
 
       subStep++;
       if (subStep < 12) {
-        // Timing: ask=800ms (let the white sit), reveal=700ms, slide=900ms
-        const delays = [800, 700, 900];
+        // Timing: ask=800ms (let the white sit), reveal=700ms, slide=1100ms
+        const delays = [800, 700, 1100];
         s1bTimers.push(setTimeout(tick, delays[subStep % 3]));
       } else {
         // ── SETTLE: fade highlights, dim theta lines ──
