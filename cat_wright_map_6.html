@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Testing — Explained</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700;9..144,800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e1117;
+    --surface: #161b22;
+    --border: #2a3040;
+    --text: #d4dae3;
+    --text-dim: #8b949e;
+    --text-bright: #f0f3f6;
+    --accent: #79c0ff;
+    --accent-glow: rgba(121, 192, 255, 0.15);
+    --teal: #3fb9a0;
+    --rose: #e06c8a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+  }
+
+  /* ── Slide system ── */
+  .slide {
+    display: none;
+    flex-direction: column;
+    padding: 28px 52px 40px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .slide.active {
+    display: flex;
+  }
+
+  .slide-counter {
+    position: fixed;
+    bottom: 20px;
+    right: 28px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 300;
+    letter-spacing: 1px;
+    z-index: 50;
+  }
+
+  .nav-hint {
+    position: fixed;
+    bottom: 20px;
+    left: 28px;
+    font-size: 11px;
+    color: #3a4250;
+    font-weight: 300;
+    z-index: 50;
+  }
+
+  /* ── Typography ── */
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 34px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+    line-height: 1.15;
+  }
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--text-dim);
+    line-height: 1.65;
+    max-width: 660px;
+    margin-bottom: 20px;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    position: relative;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.3;
+  }
+
+  .viz-area { padding: 24px 20px 16px; }
+
+  .viz-area svg {
+    width: 100%;
+    display: block;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.15);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .legend {
+    display: flex; gap: 18px;
+    font-size: 11px; color: var(--text-dim); font-weight: 300;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-line { width: 14px; height: 2px; border-radius: 1px; }
+
+  .stat-cluster { display: flex; gap: 18px; font-size: 11px; }
+  .stat { color: var(--text-dim); font-weight: 300; }
+  .stat strong { color: var(--text); font-weight: 500; }
+
+  /* ── Pills ── */
+  .controls { display: flex; gap: 6px; margin-bottom: 24px; }
+
+  .pill {
+    padding: 8px 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-dim);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    border-radius: 100px;
+    transition: all 0.25s ease;
+  }
+  .pill:hover { color: var(--text); border-color: var(--text-dim); }
+  .pill.active {
+    color: var(--bg); background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 16px var(--accent-glow);
+  }
+  .pill .n { font-weight: 300; opacity: 0.7; margin-left: 4px; }
+
+  /* ── Insight ── */
+  .insight {
+    margin-top: 16px;
+    padding: 14px 20px;
+    background: var(--accent-glow);
+    border: 1px solid rgba(121, 192, 255, 0.12);
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-weight: 300;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .insight em { color: var(--accent); font-style: normal; font-weight: 500; }
+
+  /* ── Tooltip (slide 3 only) ── */
+  .tooltip {
+    position: fixed;
+    background: #1c2333;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 300;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+    max-width: 260px;
+    line-height: 1.65;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .tooltip .theta-val { font-weight: 500; color: var(--rose); font-size: 13px; }
+  .tooltip .pattern { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .tooltip .item-row { display: flex; justify-content: space-between; gap: 12px; padding: 1px 0; }
+  .tooltip .yes { color: var(--teal); font-weight: 400; }
+  .tooltip .no { color: var(--rose); font-weight: 400; }
+
+  /* ── Step narration (slide 1) ── */
+  .step-narration {
+    margin-top: 16px;
+    padding: 14px 20px;
+    background: rgba(63, 185, 160, 0.08);
+    border: 1px solid rgba(63, 185, 160, 0.12);
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 300;
+    line-height: 1.6;
+    color: var(--text);
+    min-height: 52px;
+    transition: opacity 0.3s;
+  }
+  .step-narration strong { color: var(--teal); font-weight: 500; }
+  .step-narration .rose { color: var(--rose); }
+
+  @keyframes drawLine {
+    0% { stroke-dashoffset: var(--line-len); opacity: 0; }
+    20% { opacity: 0.6; }
+    100% { stroke-dashoffset: 0; opacity: 0.45; }
+  }
+  @keyframes popIn {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.3); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.75; }
+  }
+  @keyframes dotAppear {
+    0% { opacity: 0; r: 0; }
+    70% { opacity: 0.8; r: 4.5; }
+    100% { opacity: 0.65; r: 3.5; }
+  }
+
+  @keyframes askPulse {
+    0% { opacity: 0; }
+    15% { opacity: 0.35; }
+    50% { opacity: 0.15; }
+    85% { opacity: 0.35; }
+    100% { opacity: 0; }
+  }
+
+  @keyframes ringPulse {
+    0% { r: 4; opacity: 0.8; stroke-width: 2; }
+    100% { r: 16; opacity: 0; stroke-width: 0.5; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ SLIDE 1: Step-by-step CAT ═══════════════ -->
+<div class="slide active" id="slide1">
+  <h1>How adaptive testing <span>narrows in</span></h1>
+  <p class="subtitle">The algorithm starts at the middle of the scale, asks a question, updates its estimate, and picks the next most informative question. Press → to step through.</p>
+  <div class="card">
+    <div class="viz-area"><svg id="svg1"></svg></div>
+  </div>
+  <div class="step-narration" id="narration">Press <strong>→</strong> to begin the adaptive sequence.</div>
+</div>
+
+<!-- ═══════════════ SLIDE 2: One person's result ═══════════════ -->
+<div class="slide" id="slide2">
+  <h1>One person's <span>result</span></h1>
+  <p class="subtitle">After 4 questions, the algorithm has narrowed this person to a specific region of the scale. The highlighted zone shows the range the CAT explored.</p>
+  <div class="card">
+    <div class="viz-area"><svg id="svg2"></svg></div>
+    <div class="bottom-bar">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--teal)"></div> Task difficulty</div>
+        <div class="legend-item"><div class="legend-line" style="background:var(--rose)"></div> Person estimate</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SLIDE 3: Resolution comparison ═══════════════ -->
+<div class="slide" id="slide3">
+  <h1>How many questions buy<br>meaningful <span>differentiation</span>?</h1>
+  <p class="subtitle">Each vertical line is a unique endpoint. Hover to see which tasks were selected.</p>
+  <div class="controls">
+    <button class="pill active" data-n="3">3 items <span class="n">→ 8</span></button>
+    <button class="pill" data-n="4">4 items <span class="n">→ 16</span></button>
+    <button class="pill" data-n="5">5 items <span class="n">→ 32</span></button>
+  </div>
+  <div class="card">
+    <div class="viz-area"><svg id="svg3"></svg></div>
+    <div class="bottom-bar">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--teal)"></div> Task difficulty</div>
+        <div class="legend-item"><div class="legend-line" style="background:var(--rose)"></div> Person endpoint</div>
+      </div>
+      <div class="stat-cluster" id="stats"></div>
+    </div>
+  </div>
+  <div class="insight" id="insightBar"></div>
+</div>
+
+<div class="slide-counter" id="counter">1 / 3</div>
+<div class="nav-hint">← →</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ============================================================
+// Item bank
+// ============================================================
+const bValues = [
+   2.50,  2.40,  2.25,  2.00,  1.70,
+   1.35,  1.00,  0.70,  0.45,  0.25,
+   0.10, -0.02, -0.12, -0.22, -0.30,
+  -0.38, -0.48, -0.60, -0.75, -0.90,
+  -1.10, -1.35, -1.60, -1.90, -2.15,
+  -2.35, -2.50, -2.60, -2.70, -2.78,
+];
+const aValues = [
+  2.85, 2.95, 2.80, 2.90, 3.00,
+  2.75, 2.95, 2.85, 2.90, 2.80,
+  3.00, 2.85, 2.90, 2.95, 2.75,
+  2.90, 2.80, 2.95, 2.85, 2.90,
+  2.95, 2.80, 2.90, 2.85, 3.00,
+  2.75, 2.90, 2.85, 2.95, 2.80,
+];
+const items = bValues.map((b, i) => ({
+  id: i + 1, label: `Task ${i + 1}`, a: aValues[i], b
+}));
+const sortedItems = [...items].sort((a, b) => b.b - a.b);
+
+// ============================================================
+// IRT core
+// ============================================================
+function prob(theta, a, b) { return 1 / (1 + Math.exp(-a * (theta - b))); }
+function itemInfo(theta, a, b) { const p = prob(theta, a, b); return a*a*p*(1-p); }
+function eapTheta(responses, adminItems) {
+  const nq = 61, lo = -5, hi = 5, step = (hi-lo)/(nq-1), pv = 4;
+  let num = 0, den = 0;
+  for (let i = 0; i < nq; i++) {
+    const t = lo + i * step;
+    let ll = -0.5 * t * t / pv;
+    for (let j = 0; j < responses.length; j++) {
+      const p = prob(t, adminItems[j].a, adminItems[j].b);
+      ll += responses[j] === 1 ? Math.log(p+1e-12) : Math.log(1-p+1e-12);
+    }
+    const w = Math.exp(ll);
+    num += t * w; den += w;
+  }
+  return den > 0 ? num / den : 0;
+}
+
+// ============================================================
+// CAT simulator
+// ============================================================
+function simulateCAT(nItems) {
+  const nPaths = Math.pow(2, nItems), paths = [];
+  for (let pat = 0; pat < nPaths; pat++) {
+    const responses = [], administered = [], used = new Set();
+    let theta = 0;
+    for (let step = 0; step < nItems; step++) {
+      let best = null, bestI = -Infinity;
+      for (const it of items) {
+        if (used.has(it.id)) continue;
+        const inf = itemInfo(theta, it.a, it.b);
+        if (inf > bestI) { bestI = inf; best = it; }
+      }
+      used.add(best.id);
+      administered.push(best);
+      const r = (pat >> (nItems - 1 - step)) & 1;
+      responses.push(r);
+      theta = eapTheta(responses, administered);
+    }
+    paths.push({ pattern: responses.join(''), theta, items: administered.map(x=>x.id), itemLabels: administered.map(x=>x.label), responses: [...responses] });
+  }
+  return paths;
+}
+const catResults = { 3: simulateCAT(3), 4: simulateCAT(4), 5: simulateCAT(5) };
+
+// Choose a specific 4-item path for slides 1 & 2 — pick one that's slightly below center
+// Pattern "1010" = Yes, No, Yes, No — gives a nice mixed result
+const demoPaths = catResults[4];
+const demoPath = demoPaths.find(p => p.pattern === '1010') || demoPaths[7];
+
+// ============================================================
+// SVG helpers
+// ============================================================
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+const MARGIN = { top: 36, right: 32, bottom: 28, left: 86 };
+
+function getScales(svgNode) {
+  const W = 1040, H = 700;
+  svgNode.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svgNode.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+  svgNode.style.width = '100%';
+  svgNode.style.height = 'auto';
+  svgNode.style.minHeight = '600px';
+  const pw = W - MARGIN.left - MARGIN.right;
+  const ph = H - MARGIN.top - MARGIN.bottom;
+  const allB = sortedItems.map(x => x.b);
+  const xMin = -3.5, xMax = 3.5;
+  return {
+    W, H, pw, ph,
+    x: v => MARGIN.left + ((v - xMin) / (xMax - xMin)) * pw,
+    y: i => MARGIN.top + 12 + (i / (sortedItems.length - 1)) * (ph - 24),
+    xMin, xMax
+  };
+}
+
+function drawBase(svgNode, s) {
+  svgNode.innerHTML = '';
+  const defs = svgEl('defs', {}); svgNode.appendChild(defs);
+
+  // Grid
+  for (let t = Math.ceil(s.xMin); t <= Math.floor(s.xMax); t++) {
+    svgNode.appendChild(svgEl('line', {
+      x1: s.x(t), x2: s.x(t), y1: MARGIN.top, y2: MARGIN.top + s.ph,
+      stroke: '#1e2533', 'stroke-width': 1
+    }));
+    const lbl = svgEl('text', { x: s.x(t), y: MARGIN.top + s.ph + 18, 'text-anchor': 'middle', fill: '#505a6a', 'font-size': '10px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400' });
+    lbl.textContent = t;
+    svgNode.appendChild(lbl);
+  }
+
+  // Zero
+  svgNode.appendChild(svgEl('line', { x1: s.x(0), x2: s.x(0), y1: MARGIN.top, y2: MARGIN.top + s.ph, stroke: '#2a3444', 'stroke-width': 1, 'stroke-dasharray': '3,5' }));
+
+  // Axis label
+  const xl = svgEl('text', { x: MARGIN.left + s.pw/2, y: s.H - 4, 'text-anchor': 'middle', fill: '#505a6a', 'font-size': '10px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400', 'letter-spacing': '1.5px' });
+  xl.textContent = '\u2190 EASIER      \u03B8      HARDER \u2192';
+  svgNode.appendChild(xl);
+
+  // Task dots + labels
+  const positions = [];
+  sortedItems.forEach((item, i) => {
+    const iy = s.y(i), ix = s.x(item.b);
+    positions.push({ x: ix, y: iy, id: item.id, b: item.b });
+
+    svgNode.appendChild(svgEl('line', { x1: MARGIN.left - 4, x2: ix - 7, y1: iy, y2: iy, stroke: '#1a2030', 'stroke-width': 0.5, 'stroke-dasharray': '2,3' }));
+    svgNode.appendChild(svgEl('circle', { cx: ix, cy: iy, r: 3.5, fill: '#3fb9a0', opacity: 0.65 }));
+
+    const lbl = svgEl('text', { x: MARGIN.left - 8, y: iy + 3.5, 'text-anchor': 'end', fill: '#505a6a', 'font-size': '9.5px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '300' });
+    lbl.textContent = item.label;
+    svgNode.appendChild(lbl);
+  });
+
+  // Y label
+  const yl = svgEl('text', { x: 12, y: MARGIN.top + s.ph/2, 'text-anchor': 'middle', fill: '#505a6a', 'font-size': '9px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400', 'letter-spacing': '1px', transform: `rotate(-90, 12, ${MARGIN.top + s.ph/2})` });
+  yl.textContent = 'HARD \u2192 EASY';
+  svgNode.appendChild(yl);
+
+  return positions;
+}
+
+// ============================================================
+// SLIDE 1: Step-by-step with ask → answer sub-steps
+// s1Step: 0=start, 1=asking Q1, 2=answered Q1, 3=asking Q2, 4=answered Q2, ...
+// Total: 0 through 8 (9 states)
+// ============================================================
+let s1Step = 0;
+const S1_MAX = 8;
+const s1Svg = document.getElementById('svg1');
+const narration = document.getElementById('narration');
+
+function renderSlide1() {
+  const s = getScales(s1Svg);
+  const pos = drawBase(s1Svg, s);
+
+  const adminItems = demoPath.items.map(id => items.find(it => it.id === id));
+  const responses = demoPath.responses;
+
+  // How many questions are fully answered?
+  const answeredCount = Math.floor(s1Step / 2);
+  // Are we in an "asking" state for the next question?
+  const isAsking = s1Step > 0 && s1Step % 2 === 1;
+  const askingIdx = isAsking ? answeredCount : -1; // which question index we're asking (0-based)
+
+  // Compute thetas for all answered steps
+  const thetas = [0];
+  for (let i = 0; i < answeredCount; i++) {
+    thetas.push(eapTheta(responses.slice(0, i+1), adminItems.slice(0, i+1)));
+  }
+
+  // Current theta = last answered theta (doesn't update during "asking" phase)
+  const currentTheta = thetas[thetas.length - 1];
+
+  // Draw theta line
+  if (s1Step === 0) {
+    const tx = s.x(0);
+    s1Svg.appendChild(svgEl('line', { x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph, stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.3, 'stroke-dasharray': '6,4', 'stroke-linecap': 'round' }));
+    const tl = svgEl('text', { x: tx + 8, y: MARGIN.top - 14, 'text-anchor': 'start', fill: '#e06c8a', 'font-size': '11px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400', opacity: 0.6 });
+    tl.textContent = 'start: \u03B8 = 0';
+    s1Svg.appendChild(tl);
+  } else {
+    const tx = s.x(currentTheta);
+    s1Svg.appendChild(svgEl('line', {
+      x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+      stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.6, 'stroke-linecap': 'round'
+    }));
+    s1Svg.appendChild(svgEl('circle', { cx: tx, cy: MARGIN.top - 5, r: 4, fill: '#e06c8a', opacity: 0.85 }));
+    const tl = svgEl('text', { x: tx, y: MARGIN.top - 14, 'text-anchor': 'middle', fill: '#e06c8a', 'font-size': '11px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '500' });
+    tl.textContent = `\u03B8\u0302 = ${currentTheta.toFixed(2)}`;
+    s1Svg.appendChild(tl);
+  }
+
+  // Draw answered items
+  for (let i = 0; i < answeredCount; i++) {
+    const tp = pos.find(p => p.id === adminItems[i].id);
+    const isYes = responses[i] === 1;
+    const justAnswered = !isAsking && i === answeredCount - 1;
+
+    s1Svg.appendChild(svgEl('rect', {
+      x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
+      fill: isYes ? 'rgba(63, 185, 160, 0.18)' : 'rgba(224, 108, 138, 0.18)', rx: 3
+    }));
+
+    if (justAnswered) {
+      // Ring pulse on the just-answered item
+      const ring = svgEl('circle', { cx: tp.x, cy: tp.y, r: 4, fill: 'none', stroke: isYes ? '#3fb9a0' : '#e06c8a', 'stroke-width': 2, opacity: 0 });
+      ring.style.animation = 'ringPulse 1s ease-out 0.1s infinite';
+      s1Svg.appendChild(ring);
+      s1Svg.appendChild(svgEl('circle', { cx: tp.x, cy: tp.y, r: 5, fill: isYes ? '#3fb9a0' : '#e06c8a', opacity: 0.9 }));
+    }
+
+    // Badge
+    const col = isYes ? '#3fb9a0' : '#e06c8a';
+    const badge = svgEl('circle', { cx: tp.x + 16, cy: tp.y, r: 9, fill: col, opacity: justAnswered ? 1 : 0.65 });
+    s1Svg.appendChild(badge);
+    const num = svgEl('text', { x: tp.x + 16, y: tp.y + 3.5, 'text-anchor': 'middle', fill: 'white', 'font-size': '9px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '500' });
+    num.textContent = i + 1;
+    s1Svg.appendChild(num);
+
+    const rl = svgEl('text', { x: tp.x + 30, y: tp.y + 3.5, 'text-anchor': 'start', fill: col, 'font-size': '10px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '500', opacity: justAnswered ? 1 : 0.5 });
+    rl.textContent = isYes ? 'Yes' : 'No';
+    s1Svg.appendChild(rl);
+  }
+
+  // Draw "asking" state — item lit up in white, no response yet
+  if (isAsking && askingIdx < 4) {
+    const tp = pos.find(p => p.id === adminItems[askingIdx].id);
+
+    // White row highlight — "we're looking at this one"
+    s1Svg.appendChild(svgEl('rect', {
+      x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
+      fill: 'rgba(240, 243, 246, 0.08)', rx: 3
+    }));
+
+    // Pulsing ring in white/accent
+    const ring = svgEl('circle', { cx: tp.x, cy: tp.y, r: 4, fill: 'none', stroke: '#f0f3f6', 'stroke-width': 2, opacity: 0 });
+    ring.style.animation = 'ringPulse 1.2s ease-out 0s infinite';
+    s1Svg.appendChild(ring);
+
+    // Bright white dot
+    s1Svg.appendChild(svgEl('circle', { cx: tp.x, cy: tp.y, r: 5.5, fill: '#f0f3f6', opacity: 0.95 }));
+
+    // White badge with step number
+    const badge = svgEl('circle', { cx: tp.x + 16, cy: tp.y, r: 9, fill: '#f0f3f6', opacity: 0.9 });
+    s1Svg.appendChild(badge);
+    const num = svgEl('text', { x: tp.x + 16, y: tp.y + 3.5, 'text-anchor': 'middle', fill: '#0e1117', 'font-size': '9px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '500' });
+    num.textContent = askingIdx + 1;
+    s1Svg.appendChild(num);
+
+    // "Asking..." label
+    const rl = svgEl('text', { x: tp.x + 30, y: tp.y + 3.5, 'text-anchor': 'start', fill: '#f0f3f6', 'font-size': '10px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400', opacity: 0.7 });
+    rl.textContent = '?';
+    s1Svg.appendChild(rl);
+
+    // Connector from theta line to item
+    const ptx = s.x(currentTheta);
+    s1Svg.appendChild(svgEl('line', {
+      x1: Math.min(ptx, tp.x) + 4, x2: Math.max(ptx, tp.x) - 4,
+      y1: tp.y, y2: tp.y,
+      stroke: '#79c0ff', 'stroke-width': 1, opacity: 0.4, 'stroke-dasharray': '4,3'
+    }));
+  }
+
+  // Narration
+  const askNarrations = [
+    `The algorithm picks <strong>${adminItems[0]?.label}</strong> \u2014 it has the most information at \u03B8 = 0. Waiting for a response...`,
+    `Now at \u03B8 = ${thetas[1]?.toFixed(2)}, the most informative item is <strong>${adminItems[1]?.label}</strong>. Waiting for a response...`,
+    `At \u03B8 = ${thetas[2]?.toFixed(2)}, the algorithm selects <strong>${adminItems[2]?.label}</strong>. Waiting for a response...`,
+    `Final question: <strong>${adminItems[3]?.label}</strong> at \u03B8 = ${thetas[3]?.toFixed(2)}. Waiting for a response...`,
+  ];
+  const ansNarrations = [
+    `Response: ${responses[0]===1?'<strong>Yes</strong>':'<strong class="rose">No</strong>'}. Theta shifts to <strong>${thetas[1]?.toFixed(2)}</strong>.`,
+    `Response: ${responses[1]===1?'<strong>Yes</strong>':'<strong class="rose">No</strong>'}. Theta updates to <strong>${thetas[2]?.toFixed(2)}</strong>.`,
+    `Response: ${responses[2]===1?'<strong>Yes</strong>':'<strong class="rose">No</strong>'}. Theta \u2192 <strong>${thetas[3]?.toFixed(2)}</strong>.`,
+    `Response: ${responses[3]===1?'<strong>Yes</strong>':'<strong class="rose">No</strong>'}. Final estimate: <strong>\u03B8\u0302 = ${thetas[4]?.toFixed(3)}</strong>. The algorithm has converged. Press \u2192 to continue.`,
+  ];
+
+  if (s1Step === 0) {
+    narration.innerHTML = `Press <strong>\u2192</strong> to begin the adaptive sequence.`;
+  } else if (isAsking) {
+    narration.innerHTML = `<strong>Step ${askingIdx + 1}:</strong> ${askNarrations[askingIdx]}`;
+  } else {
+    const ansIdx = answeredCount - 1;
+    narration.innerHTML = `<strong>Step ${ansIdx + 1}:</strong> ${ansNarrations[ansIdx]}`;
+  }
+}
+
+// ============================================================
+// SLIDE 2: One person snapshot
+// ============================================================
+function renderSlide2() {
+  const svg2 = document.getElementById('svg2');
+  const s = getScales(svg2);
+  const pos = drawBase(svg2, s);
+
+  const adminItems = demoPath.items.map(id => items.find(it => it.id === id));
+  const responses = demoPath.responses;
+  const adminPos = demoPath.items.map(id => pos.find(p => p.id === id));
+
+  // Spanning box — from easiest to hardest administered item
+  const adminBs = adminItems.map(it => it.b);
+  const minB = Math.min(...adminBs);
+  const maxB = Math.max(...adminBs);
+  const minYpos = pos.find(p => Math.abs(p.b - maxB) < 0.01); // highest b = top of chart
+  const maxYpos = pos.find(p => Math.abs(p.b - minB) < 0.01); // lowest b = bottom of chart
+
+  if (minYpos && maxYpos) {
+    const boxY = minYpos.y - 12;
+    const boxH = maxYpos.y - minYpos.y + 24;
+    svg2.appendChild(svgEl('rect', {
+      x: MARGIN.left - 6, y: boxY, width: s.pw + 12, height: boxH,
+      fill: 'rgba(121, 192, 255, 0.04)',
+      stroke: 'rgba(121, 192, 255, 0.2)',
+      'stroke-width': 1.5,
+      'stroke-dasharray': '6,4',
+      rx: 6
+    }));
+
+    // Label for the box
+    const bl = svgEl('text', { x: MARGIN.left + s.pw + 2, y: boxY + boxH/2 + 4, 'text-anchor': 'start', fill: '#79c0ff', 'font-size': '10px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '400', opacity: 0.7 });
+    bl.textContent = 'explored';
+    svg2.appendChild(bl);
+  }
+
+  // Highlight rows
+  adminPos.forEach((tp, i) => {
+    const isYes = responses[i] === 1;
+    svg2.appendChild(svgEl('rect', {
+      x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
+      fill: isYes ? 'rgba(63, 185, 160, 0.18)' : 'rgba(224, 108, 138, 0.18)',
+      rx: 3
+    }));
+  });
+
+  // Person theta line
+  const tx = s.x(demoPath.theta);
+  svg2.appendChild(svgEl('line', {
+    x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+    stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.7, 'stroke-linecap': 'round'
+  }));
+  svg2.appendChild(svgEl('circle', { cx: tx, cy: MARGIN.top - 5, r: 4, fill: '#e06c8a', opacity: 0.9 }));
+
+  const tl = svgEl('text', { x: tx, y: MARGIN.top - 16, 'text-anchor': 'middle', fill: '#e06c8a', 'font-size': '12px', 'font-family': 'IBM Plex Mono, monospace', 'font-weight': '500' });
+  tl.textContent = `\u03B8\u0302 = ${demoPath.theta.toFixed(3)}`;
+  svg2.appendChild(tl);
+}
+
+// ============================================================
+// SLIDE 3: Resolution comparison (reuses existing logic)
+// ============================================================
+const svg3 = document.getElementById('svg3');
+const tooltip = document.getElementById('tooltip');
+const insightBar = document.getElementById('insightBar');
+const statsEl = document.getElementById('stats');
+
+function renderSlide3(n) {
+  const paths = catResults[n];
+  const s = getScales(svg3);
+  const pos = drawBase(svg3, s);
+
+  const allT = paths.map(p => p.theta);
+
+  // Task dots animate
+  // (base already drawn, add animated versions on top)
+
+  // Theta lines
+  const sorted = [...paths].sort((a, b) => a.theta - b.theta);
+  const lineLen = s.ph;
+  const lineStagger = 0.08;
+  const lineBaseDelay = 0.3;
+  const markerR = n === 5 ? 2.5 : n === 4 ? 3 : 3.5;
+
+  sorted.forEach((path, idx) => {
+    const px = s.x(path.theta);
+    const g = svgEl('g', {});
+    const delay = lineBaseDelay + idx * lineStagger;
+
+    const marker = svgEl('circle', { cx: px, cy: MARGIN.top - 5, r: markerR, fill: '#e06c8a', opacity: 0 });
+    marker.style.transformOrigin = `${px}px ${MARGIN.top - 5}px`;
+    marker.style.animation = `popIn 0.25s ease ${delay}s forwards`;
+    g.appendChild(marker);
+
+    const line = svgEl('line', {
+      x1: px, x2: px, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+      stroke: '#e06c8a', 'stroke-width': 1.5, opacity: 0,
+      'stroke-dasharray': lineLen, 'stroke-dashoffset': lineLen, 'stroke-linecap': 'round'
+    });
+    line.style.setProperty('--line-len', lineLen);
+    line.style.animation = `drawLine 0.9s cubic-bezier(0.23, 1, 0.32, 1) ${delay + 0.15}s forwards`;
+    g.appendChild(line);
+
+    // Highlight rects
+    const highlightRects = [];
+    const adminIds = new Set(path.items);
+    pos.forEach(tp => {
+      if (adminIds.has(tp.id)) {
+        const isYes = path.responses[path.items.indexOf(tp.id)] === 1;
+        const hl = svgEl('rect', { x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16, fill: isYes ? 'rgba(63, 185, 160, 0.18)' : 'rgba(224, 108, 138, 0.18)', rx: 3, opacity: 0 });
+        g.insertBefore(hl, g.firstChild);
+        highlightRects.push(hl);
+      }
+    });
+
+    const hit = svgEl('rect', { x: px - 8, y: MARGIN.top - 12, width: 16, height: s.ph + 24, fill: 'transparent', cursor: 'pointer' });
+
+    hit.addEventListener('mouseenter', () => {
+      line.style.animation = 'none'; line.style.opacity = '1'; line.style.strokeWidth = '3';
+      line.style.filter = 'drop-shadow(0 0 8px rgba(224,108,138,0.5))'; line.style.strokeDashoffset = '0';
+      marker.style.animation = 'none'; marker.style.opacity = '1';
+      highlightRects.forEach(hl => hl.setAttribute('opacity', '1'));
+      const rows = path.items.map((id, i) => {
+        const cls = path.responses[i] === 1 ? 'yes' : 'no';
+        return `<div class="item-row"><span>${path.itemLabels[i]}</span><span class="${cls}">${path.responses[i]===1?'Yes':'No'}</span></div>`;
+      }).join('');
+      tooltip.innerHTML = `<div class="theta-val">\u03B8\u0302 = ${path.theta.toFixed(3)}</div><div class="pattern">${rows}</div>`;
+      tooltip.style.opacity = '1';
+    });
+    hit.addEventListener('mousemove', e => { tooltip.style.left = (e.clientX+16)+'px'; tooltip.style.top = (e.clientY-12)+'px'; });
+    hit.addEventListener('mouseleave', () => {
+      line.style.animation = 'none'; line.style.opacity = '0.45'; line.style.strokeWidth = '1.5';
+      line.style.filter = 'none'; line.style.strokeDashoffset = '0';
+      marker.style.animation = 'none'; marker.style.opacity = '0.75';
+      highlightRects.forEach(hl => hl.setAttribute('opacity', '0'));
+      tooltip.style.opacity = '0';
+    });
+
+    g.appendChild(hit);
+    svg3.appendChild(g);
+  });
+
+  const unique = [...new Set(allT.map(t => t.toFixed(4)))];
+  const range = Math.max(...allT) - Math.min(...allT);
+  statsEl.innerHTML = `<span class="stat"><strong>${paths.length}</strong> outcomes</span><span class="stat"><strong>${unique.length}</strong> groups</span><span class="stat">range: <strong>${range.toFixed(1)}</strong></span>`;
+
+  const insights = {
+    3: `<em>3 items</em> yields <em>8 endpoints</em> \u2014 fast, but blunt. People who are meaningfully different land in the same bucket. <strong>Best for:</strong> a quick screener where you just need a rough cut.`,
+    4: `<em>4 items</em> gets you to <em>16 endpoints</em> \u2014 the sweet spot. You double resolution with one more question. Gaps tighten enough for distinct decisions without tanking completion rates. <strong>Best for:</strong> balancing precision against respondent effort.`,
+    5: `<em>5 items</em> opens up <em>32 endpoints</em> \u2014 max granularity. But notice the clustering: some precision is theoretical, not practical. Do your decisions need this level of distinction? <strong>Best for:</strong> high-stakes calls where small differences matter.`
+  };
+  insightBar.innerHTML = insights[n];
+}
+
+// ============================================================
+// Slide navigation
+// ============================================================
+let currentSlide = 0;
+const slides = [document.getElementById('slide1'), document.getElementById('slide2'), document.getElementById('slide3')];
+const counter = document.getElementById('counter');
+
+function showSlide(idx) {
+  slides.forEach(s => s.classList.remove('active'));
+  slides[idx].classList.add('active');
+  counter.textContent = `${idx + 1} / ${slides.length}`;
+  currentSlide = idx;
+  tooltip.style.opacity = '0';
+
+  if (idx === 0) renderSlide1();
+  if (idx === 1) renderSlide2();
+  if (idx === 2) renderSlide3(parseInt(document.querySelector('.pill.active').dataset.n));
+}
+
+document.querySelectorAll('.pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderSlide3(parseInt(btn.dataset.n));
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight') {
+    if (currentSlide === 0 && s1Step < S1_MAX) {
+      s1Step++;
+      renderSlide1();
+    } else if (currentSlide === 0 && s1Step >= S1_MAX) {
+      showSlide(1);
+    } else if (currentSlide < slides.length - 1) {
+      showSlide(currentSlide + 1);
+    }
+  } else if (e.key === 'ArrowLeft') {
+    if (currentSlide === 0 && s1Step > 0) {
+      s1Step--;
+      renderSlide1();
+    } else if (currentSlide > 0) {
+      if (currentSlide === 1) { s1Step = S1_MAX; }
+      showSlide(currentSlide - 1);
+    }
+  }
+});
+
+// Init
+showSlide(0);
+window.addEventListener('resize', () => showSlide(currentSlide));
+</script>
+</body>
+</html>
