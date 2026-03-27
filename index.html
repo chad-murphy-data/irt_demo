@@ -262,6 +262,22 @@
   <div class="step-narration" id="narration">Press <strong>→</strong> to begin the adaptive sequence.</div>
 </div>
 
+<!-- ═══════════════ SLIDE 1b: Many people auto-animation ═══════════════ -->
+<div class="slide" id="slide1b">
+  <h1>Now repeat for <span>everyone</span></h1>
+  <p class="subtitle">Each person takes a unique path through the item bank. Different responses lead to different endpoints — watch the estimates accumulate across the scale.</p>
+  <div class="card">
+    <div class="viz-area"><svg id="svg1b"></svg></div>
+    <div class="bottom-bar">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--teal)"></div> Task difficulty</div>
+        <div class="legend-item"><div class="legend-line" style="background:var(--rose)"></div> Person estimate</div>
+      </div>
+      <div class="stat-cluster"><span class="stat" id="s1bStatus"></span></div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ SLIDE 2: One person's result ═══════════════ -->
 <div class="slide" id="slide2">
   <h1>One person's <span>result</span></h1>
@@ -602,6 +618,130 @@ function renderSlide1() {
 }
 
 // ============================================================
+// SLIDE 1b: Many people auto-animation
+// ============================================================
+const svg1b = document.getElementById('svg1b');
+const s1bStatus = document.getElementById('s1bStatus');
+let s1bTimers = [];
+let s1bSettledPaths = [];
+
+function clearS1bTimers() {
+  s1bTimers.forEach(t => clearTimeout(t));
+  s1bTimers = [];
+}
+
+function renderS1bFrame(batch, step, settled) {
+  const s = getScales(svg1b);
+  const pos = drawBase(svg1b, s);
+
+  // Draw settled theta lines from completed batches
+  settled.forEach(p => {
+    const tx = s.x(p.theta);
+    svg1b.appendChild(svgEl('line', {
+      x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+      stroke: '#e06c8a', 'stroke-width': 1.5, opacity: 0.25, 'stroke-linecap': 'round'
+    }));
+    svg1b.appendChild(svgEl('circle', {
+      cx: tx, cy: MARGIN.top - 5, r: 2.5, fill: '#e06c8a', opacity: 0.3
+    }));
+  });
+
+  // Draw active batch members
+  batch.forEach(path => {
+    const adminItems = path.items.map(id => items.find(it => it.id === id));
+    const responses = path.responses;
+    const answered = Math.min(step, 4);
+
+    // Compute theta at this step
+    let theta = 0;
+    if (answered > 0) {
+      theta = eapTheta(responses.slice(0, answered), adminItems.slice(0, answered));
+    }
+
+    // Theta line
+    const tx = s.x(theta);
+    svg1b.appendChild(svgEl('line', {
+      x1: tx, x2: tx, y1: MARGIN.top, y2: MARGIN.top + s.ph,
+      stroke: '#e06c8a', 'stroke-width': 2, opacity: 0.65, 'stroke-linecap': 'round'
+    }));
+    svg1b.appendChild(svgEl('circle', {
+      cx: tx, cy: MARGIN.top - 5, r: 3.5, fill: '#e06c8a', opacity: 0.85
+    }));
+
+    // Highlight answered items
+    for (let i = 0; i < answered; i++) {
+      const tp = pos.find(p => p.id === adminItems[i].id);
+      if (!tp) continue;
+      const isYes = responses[i] === 1;
+      svg1b.appendChild(svgEl('rect', {
+        x: MARGIN.left - 4, y: tp.y - 8, width: s.pw + 8, height: 16,
+        fill: isYes ? 'rgba(63, 185, 160, 0.15)' : 'rgba(224, 108, 138, 0.15)',
+        rx: 3
+      }));
+    }
+  });
+
+  // Update status
+  const done = settled.length;
+  const active = batch.length;
+  if (active > 0) {
+    s1bStatus.innerHTML = `<strong>${done + active}</strong> of 16 people`;
+  } else {
+    s1bStatus.innerHTML = `<strong>${done}</strong> people measured`;
+  }
+}
+
+function startS1bAnimation() {
+  clearS1bTimers();
+  s1bSettledPaths = [];
+
+  // All 16 four-item paths (including the demo path the user already saw)
+  const allPaths = catResults[4];
+
+  // Build batches of 3
+  const batches = [];
+  for (let i = 0; i < allPaths.length; i += 3) {
+    batches.push(allPaths.slice(i, Math.min(i + 3, allPaths.length)));
+  }
+
+  let batchIdx = 0;
+
+  function runBatch() {
+    if (batchIdx >= batches.length) {
+      // Final settled state
+      renderS1bFrame([], 0, s1bSettledPaths);
+      return;
+    }
+
+    const batch = batches[batchIdx];
+    let step = 0;
+
+    function tick() {
+      renderS1bFrame(batch, step, s1bSettledPaths);
+
+      if (step < 4) {
+        step++;
+        s1bTimers.push(setTimeout(tick, 420));
+      } else {
+        // Settle: pause, then add to settled and start next batch
+        s1bTimers.push(setTimeout(() => {
+          batch.forEach(p => s1bSettledPaths.push(p));
+          batchIdx++;
+          // Brief settled view before next batch
+          renderS1bFrame([], 0, s1bSettledPaths);
+          s1bTimers.push(setTimeout(runBatch, 350));
+        }, 500));
+      }
+    }
+
+    tick();
+  }
+
+  // Initial delay before starting
+  s1bTimers.push(setTimeout(runBatch, 600));
+}
+
+// ============================================================
 // SLIDE 2: One person snapshot
 // ============================================================
 function renderSlide2() {
@@ -760,10 +900,11 @@ function renderSlide3(n) {
 // Slide navigation
 // ============================================================
 let currentSlide = 0;
-const slides = [document.getElementById('slide1'), document.getElementById('slide2'), document.getElementById('slide3')];
+const slides = [document.getElementById('slide1'), document.getElementById('slide1b'), document.getElementById('slide2'), document.getElementById('slide3')];
 const counter = document.getElementById('counter');
 
 function showSlide(idx) {
+  clearS1bTimers();
   slides.forEach(s => s.classList.remove('active'));
   slides[idx].classList.add('active');
   counter.textContent = `${idx + 1} / ${slides.length}`;
@@ -771,8 +912,9 @@ function showSlide(idx) {
   tooltip.style.opacity = '0';
 
   if (idx === 0) renderSlide1();
-  if (idx === 1) renderSlide2();
-  if (idx === 2) renderSlide3(parseInt(document.querySelector('.pill.active').dataset.n));
+  if (idx === 1) startS1bAnimation();
+  if (idx === 2) renderSlide2();
+  if (idx === 3) renderSlide3(parseInt(document.querySelector('.pill.active').dataset.n));
 }
 
 document.querySelectorAll('.pill').forEach(btn => {
