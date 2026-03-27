@@ -742,17 +742,21 @@ function startS1bAnimation() {
       };
     });
 
-    // Animate: 8 sub-steps (ask Q1, ans Q1, ask Q2, ans Q2, …)
+    // Animate: 12 sub-steps per batch of 4 questions
+    // For each question: ask (white) → reveal (colour) → slide (theta moves)
+    // 0=ask Q1, 1=reveal Q1, 2=slide Q1, 3=ask Q2, 4=reveal Q2, 5=slide Q2, …
     let subStep = 0;
 
     function tick() {
-      const qIdx = Math.floor(subStep / 2);
-      const isAsk = subStep % 2 === 0;
+      const qIdx = Math.floor(subStep / 3);
+      const phase = subStep % 3; // 0=ask, 1=reveal, 2=slide
 
       people.forEach(pe => {
-        if (isAsk && qIdx < 4) {
+        const tp = pe.adminPos[qIdx];
+        const isYes = pe.responses[qIdx] === 1;
+
+        if (phase === 0 && qIdx < 4) {
           // ── ASK phase: white highlight + pulsing ring ──
-          const tp = pe.adminPos[qIdx];
           pe.askRect.setAttribute('y', tp.y - 8);
           pe.askRect.style.opacity = '1';
 
@@ -765,18 +769,30 @@ function startS1bAnimation() {
           pe.askRing.style.opacity = '1';
           pe.askRing.style.animation = 'ringPulse 1.2s ease-out 0s infinite';
 
-        } else if (!isAsk) {
-          // ── ANSWER phase: hide ask, show result, slide theta ──
-          pe.askRect.style.opacity = '0';
-          pe.askDot.style.opacity = '0';
+        } else if (phase === 1) {
+          // ── REVEAL phase: white turns to teal/rose, ask indicators stay visible ──
           pe.askRing.style.opacity = '0';
           pe.askRing.style.animation = 'none';
 
-          // Colour the answer row
-          const isYes = pe.responses[qIdx] === 1;
+          // Colour the ask dot to match the response
+          pe.askDot.setAttribute('fill', isYes ? '#3fb9a0' : '#e06c8a');
+
+          // Colour the row highlight
+          pe.askRect.setAttribute('fill',
+            isYes ? 'rgba(63, 185, 160, 0.12)' : 'rgba(224, 108, 138, 0.12)');
+
+          // Show the persistent answer rect too
           pe.ansRects[qIdx].setAttribute('fill',
             isYes ? 'rgba(63, 185, 160, 0.18)' : 'rgba(224, 108, 138, 0.18)');
           pe.ansRects[qIdx].style.opacity = '1';
+
+        } else if (phase === 2) {
+          // ── SLIDE phase: hide ask indicators, move theta ──
+          pe.askRect.style.opacity = '0';
+          pe.askDot.style.opacity = '0';
+          // Reset ask dot colour for next question
+          pe.askDot.setAttribute('fill', '#f0f3f6');
+          pe.askRect.setAttribute('fill', 'rgba(240, 243, 246, 0.08)');
 
           // Slide theta line smoothly
           const answered = qIdx + 1;
@@ -785,7 +801,7 @@ function startS1bAnimation() {
             pe.adminItems.slice(0, answered)
           );
           const newX = s.x(theta);
-          slideLine(pe.line, pe.dot, pe.currentX, newX, 320);
+          slideLine(pe.line, pe.dot, pe.currentX, newX, 600);
           pe.currentX = newX;
         }
       });
@@ -793,8 +809,10 @@ function startS1bAnimation() {
       s1bStatus.innerHTML = `<strong>${settledCount + batch.length}</strong> of ${allPaths.length}`;
 
       subStep++;
-      if (subStep < 8) {
-        s1bTimers.push(setTimeout(tick, isAsk ? 350 : 420));
+      if (subStep < 12) {
+        // Timing: ask=800ms (let the white sit), reveal=700ms, slide=900ms
+        const delays = [800, 700, 900];
+        s1bTimers.push(setTimeout(tick, delays[subStep % 3]));
       } else {
         // ── SETTLE: fade highlights, dim theta lines ──
         s1bTimers.push(setTimeout(() => {
@@ -810,16 +828,16 @@ function startS1bAnimation() {
 
           settledCount += batch.length;
           batchIdx++;
-          s1bTimers.push(setTimeout(runBatch, 400));
-        }, 500));
+          s1bTimers.push(setTimeout(runBatch, 800));
+        }, 900));
       }
     }
 
     tick();
   }
 
-  // Small initial delay
-  s1bTimers.push(setTimeout(runBatch, 600));
+  // Initial delay before first batch
+  s1bTimers.push(setTimeout(runBatch, 1000));
 }
 
 // ============================================================
